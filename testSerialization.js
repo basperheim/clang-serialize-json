@@ -1,7 +1,7 @@
 const { exec } = require("child_process");
 
 const serializeData = async (data, key) => {
-    const command = `./serialize_data store '${JSON.stringify(data)}' ${key}`;
+    const command = `./serialize_data store ${key} '${JSON.stringify(data)}'`;
     try {
         await exec(command);
         console.log(`Data serialized with key: ${key}`);

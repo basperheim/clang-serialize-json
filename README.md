@@ -81,10 +81,25 @@ To retrieve all the keys from the stored JSON data:
 ./serialize_data keys
 ```
 
-To query and retrieve the value associated with a specific key:
+To perform a case-insensitive, partial string match query, and retrieve the value associated with a specific key:
 
 ```bash
-./serialize_data query mykey
+./serialize_data query key_name "value to search for"
+```
+
+For example, `./serialize_data query name "joh" ` should return a JSON-compliant array like:
+
+```json
+[
+    {
+        "outer_key": "mykey",
+        "data": {
+            "name": "John",
+            "age": 30,
+            "timestamp": 1686410053
+        }
+    }
+]
 ```
 
 ## How it works

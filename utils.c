@@ -2,8 +2,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <stdbool.h>
 #include "cJSON.h"
 #include "utils.h"
+#include <regex.h>
 
 #define SERIAL_FILE_PATH "serial.json"
 
@@ -40,8 +42,8 @@ cJSON* load_serial_file() {
     return root;
 }
 
-void serialize_json(const cJSON* root) {
-    if (root == NULL) {
+void serialize_json(const char* json_data) {
+    if (json_data == NULL) {
         printf("Error: Invalid JSON data.\n");
         return;
     }
@@ -52,11 +54,70 @@ void serialize_json(const cJSON* root) {
         return;
     }
 
-    char* serialized_data = cJSON_PrintUnformatted(root);
-    fwrite(serialized_data, strlen(serialized_data), 1, file);
+    fwrite(json_data, strlen(json_data), 1, file);
 
     fclose(file);
-    free(serialized_data);
+}
+
+void query_json(const cJSON* root, const char* key, const char* query) {
+    if (root == NULL) {
+        printf("Error: Failed to load the serial file.\n");
+        return;
+    }
+
+    if (key == NULL || strlen(key) == 0) {
+        printf("Error: No key provided for query operation.\n");
+        return;
+    }
+
+    regex_t regex;
+    int reti;
+    char msgbuf[100];
+
+    /* Compile regular expression */
+    reti = regcomp(&regex, query, REG_ICASE);
+    if (reti) {
+        fprintf(stderr, "Could not compile regex\n");
+        return;
+    }
+
+    cJSON *output_array = cJSON_CreateArray();
+
+    cJSON *item = NULL;
+    cJSON_ArrayForEach(item, root) {
+        cJSON *inner = cJSON_GetObjectItemCaseSensitive(item, key);
+
+        if (inner != NULL) {
+            if (cJSON_IsString(inner)) {
+                /* Execute regular expression */
+                reti = regexec(&regex, inner->valuestring, 0, NULL, 0);
+                if (!reti) {
+                    cJSON *output_object = cJSON_CreateObject();
+                    cJSON_AddItemToObject(output_object, "outer_key", cJSON_CreateString(item->string));
+                    cJSON_AddItemToObject(output_object, "data", cJSON_Duplicate(item, 1));
+                    cJSON_AddItemToArray(output_array, output_object);
+                }
+            } else if (cJSON_IsNumber(inner)) {
+                /* Convert query to an integer */
+                int query_int = atoi(query);
+                if (inner->valueint == query_int) {
+                    /* They match, so print the value */
+                    cJSON *output_object = cJSON_CreateObject();
+                    cJSON_AddItemToObject(output_object, "outer_key", cJSON_CreateString(item->string));
+                    cJSON_AddItemToObject(output_object, "data", cJSON_Duplicate(item, 1));
+                    cJSON_AddItemToArray(output_array, output_object);
+                }
+            }
+        }
+    }
+
+    char *output_string = cJSON_Print(output_array);
+    printf("%s\n", output_string);
+    free(output_string);
+    cJSON_Delete(output_array);
+
+    /* Free compiled regular expression if you want to use the regex_t again */
+    regfree(&regex);
 }
 
 void deserialize_json(const cJSON* root) {
@@ -71,22 +132,34 @@ void deserialize_json(const cJSON* root) {
     }
 }
 
-void query_json(const cJSON* root, const char* key) {
+void get_key(const cJSON* root, const char* key, const char* query, cJSON** result) {
     if (root == NULL) {
-        printf("Error: Failed to load the serial file.\n");
+        *result = NULL;
         return;
     }
 
-    cJSON* json_data = cJSON_GetObjectItem(root, key);
-    if (json_data == NULL) {
-        printf("Key '%s' does not exist.\n", key);
+    cJSON* json_key = cJSON_GetObjectItem(root, key);
+    if (json_key == NULL) {
+        *result = NULL;
         return;
     }
 
-    printf("%s\n", cJSON_Print(json_data));
+    if (cJSON_IsString(json_key) && strcmp(json_key->valuestring, query) == 0) {
+        *result = cJSON_Duplicate(json_key, true);
+        return;
+    }
+
+    cJSON* child = root->child;
+    while (child != NULL) {
+        get_key(child, key, query, result);
+        if (*result != NULL) {
+            return;
+        }
+        child = child->next;
+    }
 }
 
-void store_json(cJSON* root, const char* key, const cJSON* json_data) {
+void store_json(cJSON* root, const char* key, const char* json_data) {
     if (root == NULL) {
         printf("Error: Failed to load the serial file.\n");
         return;
@@ -97,35 +170,26 @@ void store_json(cJSON* root, const char* key, const cJSON* json_data) {
         return;
     }
 
-    // Convert the JSON data to a string
-    char* json_str = cJSON_PrintUnformatted(json_data);
-    if (json_str == NULL) {
-        printf("Error: Failed to convert JSON data to string.\n");
-        return;
-    }
-
-    // Check if the JSON data is valid
-    cJSON* parsed_data = cJSON_Parse(json_str);
-    free(json_str);
-    if (parsed_data == NULL) {
-        printf("Error: Invalid JSON data.\n");
+    // cJSON* new_data = cJSON_Parse(cJSON_PrintUnformatted(json_data));
+    cJSON* new_data = cJSON_Parse(json_data);
+    if (new_data == NULL) {
+        printf("Error: Failed to parse the new JSON data.\n");
         return;
     }
 
     // Check if the parsed data has a timestamp key
-    cJSON* timestamp = cJSON_GetObjectItem(parsed_data, "timestamp");
+    cJSON* timestamp = cJSON_GetObjectItem(new_data, "timestamp");
     if (timestamp == NULL) {
         // If the timestamp key is not present, add it with the current UNIX time
         timestamp = cJSON_CreateNumber(time(NULL));
-        cJSON_AddItemToObject(parsed_data, "timestamp", timestamp);
+        cJSON_AddItemToObject(new_data, "timestamp", timestamp);
     }
 
-    // Replace or add the key-value pair in the root JSON object
     cJSON* existing_data = cJSON_GetObjectItem(root, key);
     if (existing_data != NULL) {
-        cJSON_ReplaceItemInObject(root, key, parsed_data);
+        cJSON_ReplaceItemInObject(root, key, new_data);
     } else {
-        cJSON_AddItemToObject(root, key, parsed_data);
+        cJSON_AddItemToObject(root, key, new_data);
     }
 
     // printf("Stored JSON data:\n%s\n", cJSON_Print(root));
@@ -142,6 +206,7 @@ void store_json(cJSON* root, const char* key, const cJSON* json_data) {
     fclose(file);
     free(serialized_data);
 }
+
 
 void erase_json(cJSON* root, const char* key) {
     if (root == NULL) {
@@ -162,6 +227,21 @@ void erase_json(cJSON* root, const char* key) {
 
     fclose(file);
     free(serialized_data);
+}
+
+void list_keys(const cJSON* root, const char* key) {
+    if (root == NULL) {
+        printf("Error: Failed to load the serial file.\n");
+        return;
+    }
+
+    cJSON* json_data = cJSON_GetObjectItem(root, key);
+    if (json_data == NULL) {
+        printf("Key '%s' does not exist.\n", key);
+        return;
+    }
+
+    printf("%s\n", cJSON_Print(json_data));
 }
 
 void get_serialized_keys() {

@@ -36,6 +36,24 @@ macOS (arm64):
 arch -arch arm64 gcc -o serialize_data main.c utils.c cJSON.c -lm
 ```
 
+### Issues on macOS
+
+The error `library not found for -lcrt0.o` is a common issue when trying to build a static binary on macOS.
+
+The `-static` flag is intended for statically linking your application, meaning it will include all the libraries it depends on directly into the executable. This is mostly used in Linux, but macOS does not support fully static binaries.
+
+If your main goal is to compile the C code on macOS, you can simply remove the -static flag:
+
+```bash
+arch -arch arm64 gcc -o serialize_data main.c utils.c cJSON.c -lm
+```
+
+The `arch -arch arm64` prefix is used to explicitly build the binary for the arm64 architecture, such as the M1 chip in new Macs. If your Mac does not use the M1 chip, you can drop that prefix.
+
+However, if you really need a static binary (for example, to run the binary in a minimal Docker container), you might need to cross-compile your code on a Linux machine, or use a Docker container to build the binary in a Linux environment.
+
+But please be aware that even in Linux, creating fully static binaries can cause issues with certain libraries that expect to be dynamically loaded, so it might not be the best solution for all cases.
+
 All other systems:
 
 ```bash

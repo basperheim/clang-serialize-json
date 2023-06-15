@@ -2,7 +2,19 @@
 #include <stdlib.h>
 #include <string.h>
 #include "cJSON.h"
-#include "utils.h" // Add this line
+#include "utils.h"
+
+#define AUTHOR "Benji Asperheim"
+#define TITLE "Serialize JSON"
+#define DESCRIPTION "A command-line interface (CLI) application to store and manipulate data by serializing it into a JSON file."
+#define VERSION "0.0.2"
+
+void printVersion() {
+    printf("Author: %s\n", AUTHOR);
+    printf("Title: %s\n", TITLE);
+    printf("Description: %s\n", DESCRIPTION);
+    printf("Version: %s\n", VERSION);
+}
 
 #define SERIAL_FILE_PATH "serial.json"
 
@@ -11,6 +23,11 @@ int main(int argc, char* argv[]) {
         printf("Error: No operation specified.\n");
         printf("Available commands: serialize, deserialize, query, store, erase, keys\n");
         return 1;
+    }
+
+    if (argc == 2 && strcmp(argv[1], "--version") == 0) {
+        printVersion();
+        return 0;
     }
 
     FILE* file = fopen(SERIAL_FILE_PATH, "r");
@@ -83,6 +100,14 @@ int main(int argc, char* argv[]) {
         erase_json(root, key);
     } else if (strcmp(operation, "keys") == 0) {
         get_serialized_keys();
+    } else if (strcmp(operation, "fetch") == 0) {
+        if (argc < 3) {
+            printf("Error: No key provided for fetch operation.\n");
+            cJSON_Delete(root);
+            return 1;
+        }
+        const char* key = argv[2];
+        fetch_json(root, key);
     } else {
         printf("Error: Unknown operation '%s'.\n", operation);
         return 1;

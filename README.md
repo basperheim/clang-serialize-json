@@ -1,5 +1,7 @@
 # Serialize JSON using Clang
 
+## Version 0.0.2
+
 Serialization is the process of converting data structures or objects into a format that can be stored or transmitted and later
 reconstructed back into the original form. In the context of your code, serialization refers to converting JSON data into a string
 representation that can be stored in a file.
@@ -85,6 +87,12 @@ To store JSON data with a specific key:
 
 ```bash
 ./serialize_data store mykey '{"name": "John", "age": 30}'
+```
+
+Fetch a key:
+
+```bash
+./serialize_data fetch mykey
 ```
 
 To erase a key-value pair from the stored JSON data:

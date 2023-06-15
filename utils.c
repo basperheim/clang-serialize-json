@@ -170,7 +170,6 @@ void store_json(cJSON* root, const char* key, const char* json_data) {
         return;
     }
 
-    // cJSON* new_data = cJSON_Parse(cJSON_PrintUnformatted(json_data));
     cJSON* new_data = cJSON_Parse(json_data);
     if (new_data == NULL) {
         printf("Error: Failed to parse the new JSON data.\n");
@@ -185,26 +184,87 @@ void store_json(cJSON* root, const char* key, const char* json_data) {
         cJSON_AddItemToObject(new_data, "timestamp", timestamp);
     }
 
-    cJSON* existing_data = cJSON_GetObjectItem(root, key);
-    if (existing_data != NULL) {
-        cJSON_ReplaceItemInObject(root, key, new_data);
-    } else {
-        cJSON_AddItemToObject(root, key, new_data);
-    }
-
-    // printf("Stored JSON data:\n%s\n", cJSON_Print(root));
-
-    FILE* file = fopen(SERIAL_FILE_PATH, "wb");
+    FILE* file = fopen(SERIAL_FILE_PATH, "r+");
     if (file == NULL) {
         printf("Error: Failed to open the serial file for writing.\n");
+        cJSON_Delete(new_data);
         return;
     }
 
-    char* serialized_data = cJSON_PrintUnformatted(root);
-    fwrite(serialized_data, strlen(serialized_data), 1, file);
+    // Read the existing file contents
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
 
+    char* file_contents = (char*)malloc(file_size + 1);
+    if (file_contents == NULL) {
+        printf("Error: Failed to allocate memory for existing file data.\n");
+        fclose(file);
+        cJSON_Delete(new_data);
+        return;
+    }
+
+    fread(file_contents, file_size, 1, file);
+    file_contents[file_size] = '\0';
+
+    // Parse the existing data into a cJSON object
+    cJSON* existing_root = cJSON_Parse(file_contents);
+    free(file_contents);
+
+    if (existing_root == NULL) {
+        printf("Error: Failed to parse the existing file data.\n");
+        fclose(file);
+        cJSON_Delete(new_data);
+        return;
+    }
+
+    // Replace the specific key-value pair in the existing cJSON object with the new data
+    cJSON_DeleteItemFromObject(existing_root, key);  // Delete the item first
+    cJSON_AddItemToObject(existing_root, key, new_data);  // Then add the new item
+    new_data = NULL;  // Prevent double freeing
+
+    // Write the updated cJSON object to a temporary file
+    FILE* temp_file = fopen("temp.json", "w");
+    if (temp_file == NULL) {
+        printf("Error: Failed to create a temporary file.\n");
+        fclose(file);
+        cJSON_Delete(new_data);
+        cJSON_Delete(existing_root);
+        return;
+    }
+
+    char* serialized_data = cJSON_PrintUnformatted(existing_root);
+    fwrite(serialized_data, strlen(serialized_data), 1, temp_file);
+
+    fclose(temp_file);
     fclose(file);
+
+    // Rename the temporary file to the original file
+    if (rename("temp.json", SERIAL_FILE_PATH) != 0) {
+        printf("Error: Failed to rename the temporary file.\n");
+        remove("temp.json");  // Clean up the temporary file
+    }
+
+    cJSON_Delete(existing_root);
     free(serialized_data);
+    cJSON_Delete(new_data);
+}
+
+void fetch_json(cJSON* root, const char* key) {
+    if (root == NULL || key == NULL) {
+        printf("Error: Invalid JSON root or key.\n");
+        return;
+    }
+
+    cJSON* item = cJSON_GetObjectItem(root, key);
+    if (item == NULL) {
+        return;  // If the key does not exist, do nothing
+    }
+
+    // Print the key and the associated data
+    char* string = cJSON_Print(item);
+    printf("{\n\"%s\":\t%s\n}\n", key, string);
+    free(string);
 }
 
 
